@@ -138,15 +138,16 @@ class MCTS():
 
         self.root = MCTSNode(board.grid[gannonPos[0]][gannonPos[1]], None)
         self.root.makeChildren()
-        self.step()
 
     def step(self):
         
-        selected = self.root
-        for i in range(0, 10+1):
+        for i in range(0, 100+1):
+            selected = self.root
+
             # Selection
             while len(selected.children) != 0:
-                selected = self.selection(self.root)
+                selected = self.selection(selected)
+                print(selected.cell.name)
 
             # Expansion
             selected.makeChildren()
@@ -157,7 +158,8 @@ class MCTS():
             # Backpropagation
             self.backpropagation(selected, value)
 
-            selected = self.root
+        selected = self.selection(self.root)
+        return [int(selected.cell.name[0]), int(selected.cell.name[1])]
 
     def calcUCB(self, Vi, N, ni):
         # Vi = average reward/value of all nodes beneath this node
@@ -215,7 +217,7 @@ class MCTS():
         pos = [node.cell.row, node.cell.col]
         target = self.dest
 
-        counter = 0
+        counter = 1
 
         while pos != target:
             move = random.randint(0, 3)
@@ -532,4 +534,5 @@ while running:
             gannon.pos = (int(gannonMove[0]), int(gannonMove[1]))
 
     if doMCTS:
-        MCTS(board, link.pos, gannon.pos)
+        pos = MCTS(board, link.pos, gannon.pos).step()
+        gannon.pos = pos
