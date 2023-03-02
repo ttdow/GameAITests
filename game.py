@@ -124,7 +124,7 @@ class Board():
 
         # Right column
         for i in range(1, 8+1):
-            self.grid[i][9].setConnections([self.grid[i-1][9], self.grid[i+1][9], self.grid[i][9]])
+            self.grid[i][9].setConnections([self.grid[i-1][9], self.grid[i+1][9], self.grid[i][8]])
 
         # Interior columns
         for i in range(1, 8+1):
@@ -419,8 +419,8 @@ rock = pygame.image.load("rock.jpg")
 rocks = []
 
 running = True
-doAStar = False
-doMCTS = True
+doAStar = True
+doMCTS = False
 
 board = Board()
 path = Pathfinder(board.grid)
