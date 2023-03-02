@@ -2,6 +2,7 @@ import pygame
 from pygame import mixer
 from PIL import Image
 import math
+import random
 import time
 from datetime import datetime
 
@@ -63,6 +64,17 @@ class Tree():
     def traverse(self):
         self.traverseNode(self.root)
 
+class Link():
+    def __init__(self, row, col, imgPath):
+        self.pos = [row, col]
+        self.sprite = pygame.image.load(imgPath)
+
+
+class Gannon():
+    def __init__(self, row, col, imgPath):
+        self.pos = [row, col]
+        self.sprite = pygame.image.load(imgPath)
+
 class Cell():
     def __init__(self, row, col):
         self.col = col
@@ -119,10 +131,140 @@ class Board():
             for j in range(1, 8+1):
                 self.grid[i][j].setConnections([self.grid[i][j-1], self.grid[i][j+1], self.grid[i-1][j], self.grid[i+1][j]])
 
+class MCTS():
+    def __init__(self, board, linkPos, gannonPos):
+        self.dest = [linkPos[0], linkPos[1]]
+        self.src = [gannonPos[0], gannonPos[1]]
+
+        self.root = MCTSNode(board.grid[gannonPos[0]][gannonPos[1]], None)
+        self.root.makeChildren()
+        self.step()
+
+    def step(self):
+        
+        selected = self.root
+        for i in range(0, 10+1):
+            # Selection
+            while len(selected.children) != 0:
+                selected = self.selection(self.root)
+
+            # Expansion
+            selected.makeChildren()
+
+            # Simulation
+            value = self.simulation(selected)
+
+            # Backpropagation
+            self.backpropagation(selected, value)
+
+            selected = self.root
+
+    def calcUCB(self, Vi, N, ni):
+        # Vi = average reward/value of all nodes beneath this node
+        # N = number of times the parent node has been visited
+        # ni = number of times the child node i has been visited
+        if N == 0 or ni == 0:
+            return float('inf')
+        else:
+            return Vi + 2 * math.sqrt(math.log(N)/ni)
+
+    def selection(self, node):  
+        value = 0
+        selected = node.children[0]
+
+        for i in node.children:
+            UCB = self.calcUCB(i.value, node.visits, i.visits)
+            if UCB > value:
+                value = i.value
+                selected = i
+
+        return selected
+
+    def expansion(self):
+        print()
+
+    def moveLeft(self, pos):
+        pos[1] -= 1
+        if pos[1] < 0:
+            pos[1] += 1
+
+        return pos
+
+    def moveRight(self, pos):
+        pos[1] += 1
+        if pos[1] > 9:
+            pos[1] -= 1
+
+        return pos
+
+    def moveUp(self, pos):
+        pos[0] -= 1
+        if pos[0] < 0:
+            pos[0] += 1
+        
+        return pos
+
+    def moveDown(self, pos):
+        pos[0] += 1
+        if pos[0] > 9:
+            pos[0] -= 1
+
+        return pos
+
+    def simulation(self, node):
+        pos = [node.cell.row, node.cell.col]
+        target = self.dest
+
+        counter = 0
+
+        while pos != target:
+            move = random.randint(0, 3)
+
+            counter += 1
+
+            if (move == 0):
+                pos = self.moveLeft(pos)
+            elif (move == 1):
+                pos = self.moveRight(pos)
+            elif (move == 2):
+                pos = self.moveUp(pos)
+            else:
+                pos = self.moveDown(pos)
+
+            move = random.randint(0, 3)
+
+            if (move == 0):
+                target = self.moveLeft(target)
+            elif (move == 1):
+                target = self.moveRight(target)
+            elif (move == 2):
+                target = self.moveUp(target)
+            else:
+                target = self.moveDown(target)
+
+        return 100.0 / counter
+
+    def backpropagation(self, node, value):
+        while node.parent != None:
+            node.value += value
+            node.visits += 1
+            node = node.parent
+
+        # Update root
+        node.value += value
+        node.visits += 1
+
 class MCTSNode():
-    def __init__(self):
+    def __init__(self, cell, parent):
+        self.cell = cell
+        self.parent = parent
+        self.children = []
         self.value = 0
         self.visits = 0
+
+    def makeChildren(self):
+        for i in self.cell.connections:
+            self.children.append(MCTSNode(i, self))
 
 def detectGridPos(pos):
     row = 0
@@ -211,7 +353,12 @@ class Pathfinder():
                 break
             
             self.currentPath.append(parent)
-            parent = path[parent]
+            
+            try:
+                parent = path[parent]
+            except:
+                print("No path available!")
+                return
 
     def findPath(self, src, dest):
         frontier = []
@@ -234,6 +381,10 @@ class Pathfinder():
 
             for i in self.grid[pos[0]][pos[1]].connections:
                 new_cost = cost_so_far[current[0]] + 1
+
+                if i.blocked:
+                    continue
+
                 if i.name not in cost_so_far or new_cost < cost_so_far[i.name]:
                     cost_so_far[i.name] = new_cost
                     priority = new_cost + self.hCost(i.name, dest)
@@ -246,119 +397,139 @@ class Pathfinder():
 
 oldTime = time.time()
 
+# Start display
 pygame.init()
-mixer.init()
+screen = pygame.display.set_mode((400, 400))
 
+# Start audio
+mixer.init()
 mixer.music.load("bgmusic.mp3")
 mixer.music.set_volume(0.3)
 mixer.music.play()
 mixer.music.pause()
-
 mute = True
 
+link = Link(0, 0, "link.jpg")
+gannon = Gannon(9, 9, "enemy.jpg")
+
 bgd = pygame.image.load("grid.jpg")
-link = pygame.image.load("link.jpg")
-gannon = pygame.image.load("enemy.jpg")
 rock = pygame.image.load("rock.jpg")
 rocks = []
-linkPos = [0, 0]
-
-screen = pygame.display.set_mode((400, 400))
-
-actor = FSM(1)
-rootNode = Node("root")
-compNode = CompositeNode("composite")
-bTree = Tree(rootNode)
 
 running = True
+doAStar = False
+doMCTS = True
 
 board = Board()
 path = Pathfinder(board.grid)
 
-path.findPath(board.grid[5][5], board.grid[9][9])
-
+# Main game loop
 while running:
 
-    newTime = time.time()
-    dt = newTime - oldTime
-    #if dt != 0:
-        #print("FPS: ", 1 / dt)
-    oldTime = newTime
+    step = False
 
-    if mute:
-        mixer.music.pause()
-    else:
-        mixer.music.unpause()
+    # Wait for user movement
+    while step == False:
 
-    screen.blit(bgd, (0, 0))
-    screen.blit(link, (linkPos[0], linkPos[1]))
-    screen.blit(gannon, (360, 360))
+        if mute:
+            mixer.music.pause()
+        else:
+            mixer.music.unpause()
 
-    for i in rocks:
-        screen.blit(rock, (i[1] * 40, i[0] * 40))
+        screen.blit(bgd, (0, 0))
+        screen.blit(link.sprite, (link.pos[1] * 40, link.pos[0] * 40))
+        screen.blit(gannon.sprite, (gannon.pos[1] * 40, gannon.pos[0] * 40))
 
-    pygame.display.flip()
+        for i in rocks:
+            screen.blit(rock, (i[1] * 40, i[0] * 40))
 
-    if actor.activeState == 1:
-        actor.setState(2)
-    else:
-        actor.setState(1)
+        pygame.display.flip()
 
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
 
-        if event.type == pygame.MOUSEBUTTONUP:
-            pos = pygame.mouse.get_pos()
-            pos = detectGridPos(pos)
-            if pos not in rocks:
-                rocks.append(pos)
-                board.grid[pos[0]][pos[1]].blocked = True
-            else:
-                rocks.remove(pos)
-                board.grid[pos[0]][pos[1]].blocked = False
+            if event.type == pygame.MOUSEBUTTONUP:
+                pos = pygame.mouse.get_pos()
+                pos = detectGridPos(pos)
+                if pos not in rocks:
+                    rocks.append(pos)
+                    board.grid[pos[0]][pos[1]].blocked = True
+                else:
+                    rocks.remove(pos)
+                    board.grid[pos[0]][pos[1]].blocked = False
 
-            print(board.grid[pos[0]][pos[1]].blocked)
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    exit(0)
 
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE:
-                exit(0)
+                if event.key == pygame.K_w:
+                    link.pos[0] -= 1
 
-            if event.key == pygame.K_w:
-                linkPos[1] -= 40
-                if linkPos[1] < 0:
-                    linkPos[1] += 40
+                    if link.pos[0] < 0:
+                        link.pos[0] += 1
 
-                pos = detectGridPos((linkPos[0] + 1, linkPos[1] + 1))
-                if board.grid[pos[0]][pos[1]].blocked:
-                    linkPos[1] += 40
+                    if board.grid[link.pos[0]][link.pos[1]].blocked:
+                        link.pos[0] += 1
+                    
+                    step = True
 
-            if event.key == pygame.K_s:
-                linkPos[1] += 40
-                if linkPos[1] > 360:
-                    linkPos[1] -= 40
+                if event.key == pygame.K_s:
+                    link.pos[0] += 1
 
-                pos = detectGridPos((linkPos[0] + 1, linkPos[1] + 1))
-                if board.grid[pos[0]][pos[1]].blocked:
-                    linkPos[1] -= 40
+                    if link.pos[0] > 9:
+                        link.pos[0] -= 1
 
-            if event.key == pygame.K_d:
-                linkPos[0] += 40
-                if linkPos[0] > 360:
-                    linkPos[0] -= 40
-                
-                pos = detectGridPos((linkPos[0] + 1, linkPos[1] + 1))
-                if board.grid[pos[0]][pos[1]].blocked:
-                    linkPos[0] -= 40
+                    if board.grid[link.pos[0]][link.pos[1]].blocked:
+                        link.pos[0] -= 1
 
-            if event.key == pygame.K_a:
-                linkPos[0] -= 40
-                if linkPos[0] < 0:
-                    linkPos[0] += 40
+                    step = True
 
-                pos = detectGridPos((linkPos[0] + 1, linkPos[1] + 1))
-                if board.grid[pos[0]][pos[1]].blocked:
-                    linkPos[0] += 40
+                if event.key == pygame.K_d:
+                    link.pos[1] += 1
 
-            if event.key == pygame.K_m:
-                mute = not mute
+                    if link.pos[1] > 9:
+                        link.pos[1] -= 1
+                    
+                    if board.grid[link.pos[0]][link.pos[1]].blocked:
+                        link.pos[1] -= 1
+
+                    step = True
+
+                if event.key == pygame.K_a:
+                    link.pos[1] -= 1
+
+                    if link.pos[1] < 0:
+                        link.pos[1] += 1
+
+                    if board.grid[link.pos[0]][link.pos[1]].blocked:
+                        link.pos[1] += 1
+
+                    step = True
+
+                if event.key == pygame.K_m:
+                    mute = not mute
+
+                if event.key == pygame.K_f:
+                    path.findPath()
+
+                if event.key == pygame.K_SPACE:
+                    step = True
+
+                if event.key == pygame.K_1:
+                    doAStar = True
+                    doMCTS = False
+
+                if event.key == pygame.K_2:
+                    doAStar = False
+                    doMCTS = True
+    
+    if doAStar:
+        path.currentPath.clear()
+        path.findPath(board.grid[gannon.pos[0]][gannon.pos[1]], board.grid[link.pos[0]][link.pos[1]])
+        if len(path.currentPath) > 1:
+            gannonMove = path.currentPath[len(path.currentPath)-2]
+            gannon.pos = (int(gannonMove[0]), int(gannonMove[1]))
+
+    if doMCTS:
+        MCTS(board, link.pos, gannon.pos)
